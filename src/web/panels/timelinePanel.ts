@@ -11,7 +11,8 @@ import { ChordRelationship } from "../../catalog/relationships.js";
 import { Store, TransitionView } from "../state.js";
 import { el, clear, on } from "../dom.js";
 import { chordCard } from "./chordPanel.js";
-import { keyboardStrip, Highlight } from "./visual.js";
+import { Highlight } from "./visual.js";
+import { getVisualizer } from "../instruments.js";
 
 const MOTION_NAMES = ["unison", "m2", "M2", "m3", "M3", "P4", "TT", "P5", "m6", "M6", "m7", "M7"];
 
@@ -127,11 +128,11 @@ function scaleOptionRow(store: Store, opt: InterpolationResult): HTMLElement {
   row.appendChild(label);
   row.appendChild(el("span", { class: `nat nat-${opt.naturalness}` }, opt.naturalness));
   row.appendChild(el("span", { class: "muted small" }, ` deg ${opt.detail.fromDegree ?? "?"}→${opt.detail.toDegree ?? "?"} · score ${opt.score.toFixed(1)}`));
-  // mini keyboard of the scale
+  // mini visualizer of the scale (respects active instrument)
   const hl: Highlight[] = [{ pcs: new Set(view.degrees.map((d) => d.pc)), kind: "scale" }];
   const names = new Map<PitchClass, string>();
   for (const d of view.degrees) names.set(mod12(d.pc), d.name);
-  const mini = keyboardStrip(hl, { names });
+  const mini = getVisualizer(store.instrumentId).render({ highlights: hl, names });
   mini.classList.add("mini");
   row.appendChild(mini);
   return row;

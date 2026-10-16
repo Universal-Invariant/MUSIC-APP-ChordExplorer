@@ -12,12 +12,24 @@ import { accidentalText, Spelling } from "../theory/spelling.js";
 export interface NoteNameCtx {
   /** preferred spelling per pitch class, chosen by the caller */
   spellings: Map<PitchClass, Spelling>;
+  /**
+   * Optional exact chord-tone spellings (root + every degree of one chord).
+   * Strategies that label degrees (direct symbol) consult this first so a
+   * chord always renders with its own true spelling, e.g. Fmaj7b9 — never a
+   * heuristic respelling like "F bbbbbbb9".
+   */
+  chordTones?: RenderedChord & { spellings: Map<PitchClass, Spelling> };
+}
+
+/** Chord whose spelled degrees override generic guesses in a context. */
+export function ctxForChord(base: NoteNameCtx, ch: RenderedChord, spellings: Map<PitchClass, Spelling>): NoteNameCtx {
+  return { spellings: new Map([...base.spellings, ...spellings]), chordTones: { ...ch, spellings } };
 }
 
 export interface RenderedChord {
   root: PitchClass;
   /** intervals above root; semitones may be compound (#11 = 18) */
-  degrees: { semitones: number; generic: number }[];
+  degrees: { semitones: number; generic: number; pc?: PitchClass }[];
   bass?: PitchClass;
 }
 
@@ -111,7 +123,20 @@ export const directSymbol: ExpressionStrategy = {
   id: "direct",
   name: "Direct symbol",
   describe(ch, ctx) {
-    const parts = ch.degrees.map((d) => degreeLabel(d.semitones, d.generic)).join("");
+    // Prefer the chord's own spelled degrees (exact accidentals from the
+    // parser / speller); fall back to generic-guess labels otherwise.
+    const own = ctx.chordTones && mod12(ctx.chordTones.root) === mod12(ch.root) ? ctx.chordTones : null;
+    const parts = ch.degrees.map((d) => {
+      if (own) {
+        const match = own.degrees.find((x) => x.semitones === d.semitones && x.generic === d.generic)
+          ?? own.degrees.find((x) => mod12(x.semitones) === mod12(d.semitones));
+        if (match) {
+          const sp = match.pc !== undefined ? own.spellings.get(mod12(match.pc)) : undefined;
+          if (sp) return accidentalText(sp.accidental) + String(match.generic + 1);
+        }
+      }
+      return degreeLabel(d.semitones, d.generic);
+    }).join("");
     return [noteName(ch.root, ctx) + parts];
   },
 };

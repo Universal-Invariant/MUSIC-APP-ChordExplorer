@@ -8,9 +8,10 @@ import { findScale, SCALE_CATALOG } from "../catalog/scales.js";
 import { ScaleInstance, scaleBitmask, scaleIntervals } from "../theory/scale.js";
 import { parseChordSymbol, ParseResult } from "../theory/parser.js";
 import { spellSet } from "../theory/speller.js";
-import { accidentalText, Letter } from "../theory/spelling.js";
+import { accidentalText, Letter, LETTERS } from "../theory/spelling.js";
 import { degreeLabel } from "../theory/intervals.js";
-import { SymbolRenderer, RenderedChord, NoteNameCtx } from "../display/symbol.js";
+import { SymbolRenderer, RenderedChord, NoteNameCtx, ctxForChord } from "../display/symbol.js";
+import { parseSpelling, bestSpelling, spellingPC, Spelling } from "../theory/spelling.js";
 import {
   analyzeProgression, findChordsForScale, findInterpolatingScales, findTwoScaleOptions,
   InterpolationResult, ProgressionAnalysis, ReverseMatch, ScalePoolOptions, TwoScaleOption,
@@ -114,14 +115,30 @@ export class HarmonicApp {
     return { spellings: map };
   }
 
+  /** Spelling context for one specific chord: exact degree spellings from root. */
+  chordContext(ch: Chord, preferFlats = false): NoteNameCtx {
+    const rootSp = parseSpelling(ch.rootName ?? "") ?? bestSpelling(ch.root);
+    const degrees = ch.intervals.map((i) => ({ semitones: i.semitones, generic: i.generic }));
+    const names = normalizeSet([ch.root, ...degrees.map((d) => mod12(ch.root + d.semitones))]);
+    const anchors = new Map<PitchClass, Spelling>([[mod12(ch.root), rootSp]]);
+    const map = spellSet(names, { anchors, anchorRoot: mod12(ch.root), degrees, preferFlats });
+    const rc: RenderedChord = {
+      root: ch.root,
+      degrees: degrees.map((d) => ({ ...d, pc: mod12(ch.root + d.semitones) })),
+      bass: ch.bass,
+    };
+    return ctxForChord({ spellings: map }, rc, map);
+  }
+
   expressions(ch: Chord, ctx?: NoteNameCtx): { strategy: string; text: string }[] {
     const rc: RenderedChord = {
       root: ch.root,
-      degrees: ch.intervals.map((i) => ({ semitones: i.semitones, generic: i.generic })),
+      degrees: ch.intervals.map((i) => ({ semitones: i.semitones, generic: i.generic, pc: mod12(ch.root + i.semitones) })),
+      bass: ch.bass,
     };
-    const names = normalizeSet([ch.root, ...ch.intervals.map((i) => mod12(ch.root + i.semitones))]);
-    const defaultCtx = this.nameContext(names);
-    return this.renderer.renderAll(rc, ctx ?? defaultCtx);
+    const own = this.chordContext(ch);
+    const merged: NoteNameCtx = ctx ? { ...ctx, chordTones: own.chordTones } : own;
+    return this.renderer.renderAll(rc, merged);
   }
 
   scaleNotes(inst: ScaleInstance, ctx?: NoteNameCtx): string[] {
@@ -139,8 +156,13 @@ export class HarmonicApp {
    * Everything a chord panel needs to render one chord: spelled note names in
    * ascending order from the root, degree labels, and slash-bass info.
    */
-  chordView(ch: Chord, bass?: PitchClass): ChordView {
-    const ctx = this.nameContext(normalizeSet([ch.root, ...ch.intervals.map((i) => mod12(ch.root + i.semitones)), ...(bass !== undefined ? [bass] : [])]));
+  chordView(ch: Chord, bass?: PitchClass, ctxOverride?: NoteNameCtx): ChordView {
+    const effBass = bass ?? ch.bass;
+    // Exact spelling anchored on the chord's own root + degree specs.
+    // When a scale context is supplied (ctxOverride), merge its spellings so
+    // re-spelled tones (e.g. Fmaj7#9 re-read as Ab/F) use the parent scale's
+    // names instead of heuristic respellings like "Abbbb".
+    const ctx = ctxOverride ? { ...this.chordContext(ch), spellings: new Map([...ctxOverride.spellings, ...this.chordContext(ch).spellings]) } : this.chordContext(ch);
     const tones = ch.intervals
       .map((i) => ({
         semitones: mod12(i.semitones),
@@ -151,16 +173,24 @@ export class HarmonicApp {
       }))
       .sort((a, b) => a.semitones - b.semitones);
     const formula = formulaForChord(ch);
-    const symbolTexts = this.expressions(ch, ctx).slice(0, 8);
+    // Render expressions in the same merged context so slash/re-root forms
+    // use scale-consistent note names (no "F bbbbbbb9"-style artifacts).
+    const rcView: RenderedChord = {
+      root: ch.root,
+      degrees: ch.intervals.map((i) => ({ semitones: i.semitones, generic: i.generic, pc: mod12(ch.root + i.semitones) })),
+      bass: effBass,
+    };
+    const viewCtx: NoteNameCtx = { ...ctx, chordTones: ctx.chordTones };
+    const symbolTexts = this.renderer.renderAll(rcView, viewCtx).slice(0, 8);
     return {
       root: ch.root,
       rootName: this.spelledName(ctx, mod12(ch.root)),
       quality: ch.quality,
       formulaId: formula?.id,
       tones: [{ pc: mod12(ch.root), name: this.spelledName(ctx, mod12(ch.root)), degree: "1", semitones: 0 }, ...tones],
-      bass,
-      bassName: bass !== undefined ? this.spelledName(ctx, mod12(bass)) : undefined,
-      bitmask: chordBitmask(ch) | (bass !== undefined ? (1 << mod12(bass)) : 0),
+      bass: effBass,
+      bassName: effBass !== undefined ? this.spelledName(ctx, effBass) : undefined,
+      bitmask: chordBitmask(ch) | (effBass !== undefined ? (1 << mod12(effBass)) : 0),
       expressions: symbolTexts,
     };
   }
@@ -169,22 +199,32 @@ export class HarmonicApp {
   scaleView(inst: ScaleInstance): ScaleView {
     const offs = scaleIntervalsOf(inst.def);
     const pcs = offs.map((o) => mod12(inst.root + o));
-    const ctx = this.nameContext(pcs);
-    const spelled = inst.def.degrees && inst.def.degrees.length === offs.length
-      ? inst.def.degrees
-      : null;
+    // Exact spelling: each degree's letter is offset by its generic step count
+    // from the tonic's letter (degree i -> letter index +i), accidentals follow.
+    const rootSp = parseSpelling(inst.rootName ?? "") ?? bestSpelling(inst.root);
+    const rootLetterIdx = LETTERS.indexOf(rootSp.letter);
+    const map = new Map<PitchClass, Spelling>();
+    map.set(mod12(inst.root), rootSp);
+    offs.forEach((o, i) => {
+      if (i === 0) return;
+      const pc = mod12(inst.root + o);
+      const letter = LETTERS[(rootLetterIdx + i) % 7];
+      const base = LETTER_PC[letter];
+      let acc = mod12(pc - base);
+      if (acc > 6) acc -= 12;
+      if (!map.has(pc)) map.set(pc, { letter, accidental: acc });
+    });
+    const ctx: NoteNameCtx = { spellings: map };
+    const spelled = inst.def.degrees && inst.def.degrees.length === offs.length ? inst.def.degrees : null;
     const degrees = offs.map((o, i) => {
       const pc = mod12(inst.root + o);
-      const sp = spelled?.[i] ?? ctx.spellings.get(pc);
-      const acc = sp ? sp.accidental : 0;
-      const natural = sp ? LETTER_PC[sp.letter] : pc;
-      const alter = mod12(pc - natural); // 0 natural, 1 sharp, 11 flat-side
+      const sp = map.get(pc)!;
       return {
         degree: i + 1,
         pc,
         offset: o,
-        name: sp ? sp.letter + accidentalText(acc) : "?",
-        label: `${i + 1}${alter === 1 ? "#" : alter === 11 ? "b" : alter >= 2 && alter <= 5 ? "#".repeat(alter) : alter >= 7 ? "b".repeat(12 - alter) : ""}`,
+        name: sp.letter + accidentalText(sp.accidental),
+        label: typeof spelled?.[i] === "string" ? spelled[i] : `${i + 1}${sp.accidental === 1 ? "#" : sp.accidental === -1 ? "b" : sp.accidental > 1 ? "#".repeat(sp.accidental) : sp.accidental < -1 ? "b".repeat(-sp.accidental) : ""}`,
       };
     });
     return {

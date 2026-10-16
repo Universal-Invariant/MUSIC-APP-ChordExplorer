@@ -8,7 +8,8 @@ import { ScaleView } from "../../analysis/api.js";
 import { ScaleInstance } from "../../theory/scale.js";
 import { Store } from "../state.js";
 import { el, clear, on } from "../dom.js";
-import { keyboardStrip, Highlight } from "./visual.js";
+import { Highlight } from "./visual.js";
+import { getVisualizer, instrumentPicker } from "../instruments.js";
 
 const NOTE_TO_PC: Record<string, PitchClass> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
@@ -21,6 +22,7 @@ export function mountScalePanel(root: HTMLElement, store: Store): void {
 function draw(root: HTMLElement, store: Store): void {
   clear(root);
   root.appendChild(el("h2", {}, "Scale view"));
+  root.appendChild(instrumentPicker(store.instrumentId, (id) => store.setInstrument(id)));
 
   if (!store.activeScale) {
     root.appendChild(el("div", { class: "muted" }, "Pick a scale below or choose one from an interpolation result to explore and build chords from it."));
@@ -59,7 +61,7 @@ function draw(root: HTMLElement, store: Store): void {
   root.appendChild(scalePicker(store, inst));
 }
 
-/** Full visualization card for a scale instance: title, degree table, keyboard. */
+/** Full visualization card for a scale instance: title, degree table, visualizer. */
 export function scaleCard(view: ScaleView, store: Store, interactive = false): HTMLElement {
   const card = el("div", { class: "scale-card" });
   card.appendChild(el("div", { class: "scale-title" }, `${view.rootName} ${view.def.name}`, el("small", { class: "muted" }, ` [${view.def.abbr}]`)));
@@ -83,7 +85,7 @@ export function scaleCard(view: ScaleView, store: Store, interactive = false): H
   ];
   const names = new Map<PitchClass, string>();
   for (const d of view.degrees) names.set(mod12(d.pc), d.name);
-  card.appendChild(keyboardStrip(hl, { names }));
+  card.appendChild(getVisualizer(store.instrumentId).render({ highlights: hl, names }));
 
   if (interactive) {
     const btns = el("div", { class: "btn-row" });

@@ -21,6 +21,10 @@ export interface Chord {
   quality: Quality;
   /** original symbol text, kept for round-tripping / display fallback */
   source?: string;
+  /** spelled root as entered (e.g. "Eb"); falls back to pc name when absent */
+  rootName?: string;
+  /** slash bass pitch class when the symbol was X/Y */
+  bass?: PitchClass;
 }
 
 /** All pitch classes sounding in the chord (root included). */
@@ -170,7 +174,7 @@ export function allFormulas(): FormulaEntry[] {
 /* ------------------------------------------------------------------ */
 
 /** Build a chord from a root name and degree tokens (validated, de-duped). */
-export function makeChord(root: PitchClass, degreeTokens: string[], source?: string): Chord {
+export function makeChord(root: PitchClass, degreeTokens: string[], source?: string, rootName?: string): Chord {
   const bySemi = new Map<number, IntervalSpec>();
   for (const t of degreeTokens) {
     const spec = parseDegreeToken(t);
@@ -180,7 +184,7 @@ export function makeChord(root: PitchClass, degreeTokens: string[], source?: str
   }
   const intervals = [...bySemi.values()];
   const known = lookupFormulaByKey(degreesToKey(degreeTokens));
-  return { root, intervals, quality: known?.quality ?? "none", source };
+  return { root, intervals, quality: known?.quality ?? "none", source, rootName };
 }
 
 /** Catalog formula for a chord's pitch content, if known. */
