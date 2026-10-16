@@ -5,9 +5,25 @@
  */
 import { mod12, normalizeSet, PitchClass } from "../core/pitch.js";
 import { IntervalSpec, parseDegreeToken } from "./intervals.js";
-import { Letter, Spelling } from "./spelling.js";
+import { LETTERS, Letter, parseSpelling, Spelling, spellingPC } from "./spelling.js";
 
 export type Quality = "maj" | "min" | "dim" | "aug" | "sus2" | "sus4" | "none";
+
+/**
+ * Exact spelling of a degree token relative to a spelled root: the degree's
+ * letter is the root's letter shifted by its generic size ("#9" over F -> G#).
+ */
+export function spellDegree(rootName: string, token: string): { spec: IntervalSpec; spelling: Spelling } | null {
+  const spec = parseDegreeToken(token);
+  const rs = parseSpelling(rootName);
+  if (!spec || !rs) return null;
+  const letter = LETTERS[(LETTERS.indexOf(rs.letter) + spec.generic) % 7];
+  const base = ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 } as Record<Letter, number>)[letter];
+  const pc = mod12(spellingPC(rs) + spec.semitones);
+  let acc = mod12(pc - base);
+  if (acc > 6) acc -= 12;
+  return { spec, spelling: { letter, accidental: acc } };
+}
 
 export interface ChordFormula {
   /** degree tokens relative to root, e.g. ["7","3","5","b7","#9"] or compact aliases like "m7b5" */
@@ -25,6 +41,12 @@ export interface Chord {
   rootName?: string;
   /** slash bass pitch class when the symbol was X/Y */
   bass?: PitchClass;
+  /**
+   * Exact spelled degrees as parsed/authored (e.g. "#9" -> generic 8 with a
+   * G# spelling on F). Display uses these instead of re-deriving accidentals
+   * from mod-12 semitone arithmetic, which produced artifacts like "bbbb9".
+   */
+  exactDegrees?: { spec: IntervalSpec; spelling: Spelling }[];
 }
 
 /** All pitch classes sounding in the chord (root included). */
@@ -176,15 +198,20 @@ export function allFormulas(): FormulaEntry[] {
 /** Build a chord from a root name and degree tokens (validated, de-duped). */
 export function makeChord(root: PitchClass, degreeTokens: string[], source?: string, rootName?: string): Chord {
   const bySemi = new Map<number, IntervalSpec>();
+  const exact: { spec: IntervalSpec; spelling: Spelling }[] = [];
   for (const t of degreeTokens) {
     const spec = parseDegreeToken(t);
     if (!spec) throw new Error(`bad degree token "${t}"`);
     const s = mod12(spec.semitones);
-    if (!bySemi.has(s)) bySemi.set(s, spec);
+    if (!bySemi.has(s)) {
+      bySemi.set(s, spec);
+      const ex = rootName ? spellDegree(rootName, t) : null;
+      if (ex && mod12(spellingPC(ex.spelling)) === mod12(root + spec.semitones)) exact.push(ex);
+    }
   }
   const intervals = [...bySemi.values()];
   const known = lookupFormulaByKey(degreesToKey(degreeTokens));
-  return { root, intervals, quality: known?.quality ?? "none", source, rootName };
+  return { root, intervals, quality: known?.quality ?? "none", source, rootName, exactDegrees: exact.length ? exact : undefined };
 }
 
 /** Catalog formula for a chord's pitch content, if known. */

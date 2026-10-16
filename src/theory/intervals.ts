@@ -64,14 +64,30 @@ export function parseDegreeToken(token: string): IntervalSpec | null {
   return { semitones: naturalSimple + acc + octaves * 12, generic };
 }
 
-/** Degree label (relative to root) for display, e.g. 4 -> "b3" given semitone 3. */
+/** Accidentals rendered compactly: b bb # x (never runs like "bbbb"). */
+export function accidentalLabel(alteration: number): string {
+  switch (alteration) {
+    case 1: return "#";
+    case -1: return "b";
+    case 2: return "x";
+    case -2: return "bb";
+    default: return alteration > 0 ? "#".repeat(alteration) : "b".repeat(-alteration);
+  }
+}
+
+/**
+ * Degree label (relative to root) for display, e.g. semitone 3 / generic 2 -> "b3".
+ * Accepts simple (0..11) or compound semitones; when a simple value is given
+ * for a compound generic it is octave-corrected first (prevents nonsense
+ * deltas like labeling G# above F as "#11+octave" with six flats).
+ */
 export function degreeLabel(semitones: number, generic: number): string {
   const { simple, octaves } = reduceGeneric(generic);
   const naturalSimple = [0, 2, 4, 5, 7, 9, 11][simple];
-  const base = semitones - octaves * 12;
+  let base = semitones - octaves * 12;
+  if (base < 0 || base > 11) base = mod12(semitones); // caller passed a simple pc offset
   const delta = base - naturalSimple;
-  const acc = delta === 1 ? "#" : delta === -1 ? "b" : delta === 2 ? "x" : delta === -2 ? "bb" : delta > 0 ? "#".repeat(delta) : "b".repeat(-delta);
-  return `${acc}${simple + 1 + octaves * 7}`;
+  return `${accidentalLabel(delta)}${simple + 1 + octaves * 7}`;
 }
 
 export { mod12 };
