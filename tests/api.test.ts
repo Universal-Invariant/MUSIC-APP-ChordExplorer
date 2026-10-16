@@ -114,3 +114,28 @@ test("chordFromScaleDegrees stacks tertian chords", () => {
   assert.equal(triad.root, 0);
   assert.deepEqual([...triad.intervals.map((i) => i.semitones)].sort((a, b) => a - b), [4, 7]);
 });
+
+// ---- regression: no runaway accidental runs ("bbbbbb9") in labels ----
+test("degree labels never contain 3+ repeated accidentals", () => {
+  const cases = ["Fmaj7#9#11", "E7b9", "Caug/B", "AmM7/F", "G7b9b13", "Db7#9#11", "F7bb9"];
+  for (const sym of cases) {
+    const r = app.parse(sym);
+    assert.ok(r.ok, `parse ${sym}`);
+    const v = app.chordView(r.chord!);
+    for (const t of v.tones) {
+      assert.ok(!/[#b]{3,}/.test(t.degree), `${sym}: degree label "${t.degree}" has a runaway accidental run`);
+    }
+    for (const e of v.expressions) {
+      assert.ok(!/[#b]{3,}/.test(e.text), `${sym}: expression "${e.text}" has a runaway accidental run`);
+    }
+  }
+});
+
+test("Fmaj7#9#11 labels the #9 and #11 exactly", () => {
+  const r = app.parse("Fmaj7#9#11");
+  assert.ok(r.ok);
+  const v = app.chordView(r.chord!);
+  const degs = v.tones.map((t) => t.degree);
+  assert.ok(degs.includes("#9"), `expected #9 among ${degs.join(",")}`);
+  assert.ok(degs.includes("#11"), `expected #11 among ${degs.join(",")}`);
+});

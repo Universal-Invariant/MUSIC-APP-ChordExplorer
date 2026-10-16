@@ -110,3 +110,34 @@ td.hl-bass .dot { box-shadow: 0 0 0 2px var(--bass-c); }
 .rev-list { max-height: 26rem; overflow-y: auto; }
 
 @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+/* ---------- SVG fretboard ---------- */
+.fretboard { overflow-x: auto; }
+.fb-svg { display: block; }
+.fb-board { fill: #241b12; stroke: var(--line); }
+.fb-nut { fill: #e8e0cf; }
+.fb-fret { stroke: #6b5b45; stroke-width: 1.5; }
+.fb-num { fill: var(--muted); font-size: .62rem; }
+.fb-string { stroke: #cfc4a8; stroke-linecap: round; }
+.fb-string-halo { stroke: rgba(207, 196, 168, 0.22); stroke-linecap: round; }
+.fb-open-name { fill: var(--muted); font-size: .68rem; }
+.fb-dot { stroke: rgba(0,0,0,.45); stroke-width: .75; }
+.fb-dot-label { fill: #0c0c0c; font-size: .58rem; font-weight: 600; pointer-events: none; }
+.fb-root { fill: #f4b942; }
+.fb-tone { fill: #7ec8f2; }
+.fb-bass { fill: #b78cf2; }
+.fb-scale { fill: #8fd694; }
+.fb-hit { fill: transparent; }
+.fb-hit:hover { fill: rgba(255,255,255,.07); }
+
+/* ---------- footer build stamp & About dialog ---------- */
+.build-stamp { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+button.link.like { background: none; border: none; color: var(--accent); cursor: pointer; font-size: .72rem; padding: 0; text-decoration: underline; }
+dialog.about { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); max-width: 420px; width: 92vw; padding: 16px 18px; }
+dialog.about::backdrop { background: rgba(0,0,0,.5); }
+.about-meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0 14px; font-size: .8rem; }
+.about-meta dt { color: var(--muted); }
+.about-meta dd { margin: 0; font-family: ui-monospace, monospace; }
+.about h4 { margin: 10px 0 6px; font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.about-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 6px 0; font-size: .82rem; }
+.about-row input[type="number"] { width: 84px; }

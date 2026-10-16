@@ -209,9 +209,14 @@ export function makeChord(root: PitchClass, degreeTokens: string[], source?: str
       if (ex && mod12(spellingPC(ex.spelling)) === mod12(root + spec.semitones)) exact.push(ex);
     }
   }
+  // Keep authored degrees aligned with the de-duped interval list (first
+  // token wins per pitch class) so consumers can trust exactDegrees[i] <->
+  // intervals membership without extra filtering.
+  const kept = new Set(bySemi.keys());
+  const exactKept = exact.filter((e) => kept.has(mod12(e.spec.semitones)));
   const intervals = [...bySemi.values()];
   const known = lookupFormulaByKey(degreesToKey(degreeTokens));
-  return { root, intervals, quality: known?.quality ?? "none", source, rootName, exactDegrees: exact.length ? exact : undefined };
+  return { root, intervals, quality: known?.quality ?? "none", source, rootName, exactDegrees: exactKept.length ? exactKept : undefined };
 }
 
 /** Catalog formula for a chord's pitch content, if known. */

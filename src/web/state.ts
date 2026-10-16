@@ -61,6 +61,8 @@ export class Store {
     return () => this.listeners.delete(fn);
   }
 
+  notify(): void { this.emit(); }
+
   private emit(): void {
     for (const fn of [...this.listeners]) fn();
   }

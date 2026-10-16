@@ -86,8 +86,30 @@ export function degreeLabel(semitones: number, generic: number): string {
   const naturalSimple = [0, 2, 4, 5, 7, 9, 11][simple];
   let base = semitones - octaves * 12;
   if (base < 0 || base > 11) base = mod12(semitones); // caller passed a simple pc offset
-  const delta = base - naturalSimple;
+  const delta = clampDelta(base - naturalSimple);
   return `${accidentalLabel(delta)}${simple + 1 + octaves * 7}`;
+}
+
+/**
+ * Clamped variant of `degreeLabel`: the accidental prefix never exceeds a
+ * double sharp/flat even if callers pass inconsistent (semitone, generic)
+ * pairs from heuristic respellings. Guards against "bbbbbbbbb9"-style
+ * artifacts leaking into the UI.
+ */
+export function degreeLabelSafe(semitones: number, generic: number): string {
+  const { simple, octaves } = reduceGeneric(generic);
+  const naturalSimple = [0, 2, 4, 5, 7, 9, 11][simple];
+  let base = semitones - octaves * 12;
+  if (base < 0 || base > 11) base = mod12(semitones);
+  const delta = clampDelta(base - naturalSimple);
+  return `${accidentalLabel(delta)}${simple + 1 + octaves * 7}`;
+}
+
+/** Accidentals beyond ±2 are notated as their enharmonic simpler form. */
+function clampDelta(delta: number): number {
+  if (delta <= -3) return -2;
+  if (delta >= 3) return 2;
+  return delta;
 }
 
 export { mod12 };
