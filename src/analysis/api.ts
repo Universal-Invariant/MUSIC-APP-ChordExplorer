@@ -9,9 +9,9 @@ import { ScaleInstance, scaleBitmask, scaleIntervals } from "../theory/scale.js"
 import { parseChordSymbol, ParseResult } from "../theory/parser.js";
 import { spellSet } from "../theory/speller.js";
 import { accidentalText, Letter, LETTERS } from "../theory/spelling.js";
-import { accidentalLabel, degreeLabel } from "../theory/intervals.js";
+import { accidentalLabel, degreeLabelSafe } from "../theory/intervals.js";
 import { SymbolRenderer, RenderedChord, NoteNameCtx, ctxForChord } from "../display/symbol.js";
-import { parseSpelling, bestSpelling, spellingPC, Spelling } from "../theory/spelling.js";
+import { parseSpelling, bestSpelling, spellingPC, formatSpelling, Spelling } from "../theory/spelling.js";
 import {
   analyzeProgression, findChordsForScale, findInterpolatingScales, findTwoScaleOptions,
   InterpolationResult, ProgressionAnalysis, ReverseMatch, ScalePoolOptions, TwoScaleOption,
@@ -74,6 +74,11 @@ const NATURAL_SEMI = [0, 2, 4, 5, 7, 9, 11];
 
 function scaleIntervalsOf(def: ScaleInstance["def"]): number[] {
   return scaleIntervals(def);
+}
+
+/** Accidentals beyond ±2 are notated enharmonically; keep labels compact. */
+function clampAccidental(a: number): number {
+  return a > 2 ? 2 : a < -2 ? -2 : a;
 }
 
 export class HarmonicApp {
@@ -148,7 +153,7 @@ export class HarmonicApp {
     const c = ctx ?? this.nameContext(pcs);
     return pcs.map((p) => {
       const s = c.spellings.get(p);
-      return s ? `${s.letter}${s.accidental === 0 ? "" : s.accidental > 0 ? "#".repeat(s.accidental) : "b".repeat(-s.accidental)}` : "?";
+      return s ? `${formatSpelling(s)}` : "?";
     });
   }
 
@@ -176,11 +181,13 @@ export class HarmonicApp {
       let label: string;
       if (exactBySemi.has(mod12(i.semitones))) {
         label = exactBySemi.get(mod12(i.semitones))!;
-      } else if (ctx.chordTones) {
-        const sp = ctx.chordTones.spellings.get(pc);
-        label = sp ? accidentalLabel(sp.accidental) + String(i.generic + 1) : degreeLabel(i.semitones, i.generic);
       } else {
-        label = degreeLabel(i.semitones, i.generic);
+        // Never trust a raw scale/diatonic spelling as a *degree* label: when
+        // the pc is an altered chord tone (e.g. G# above F labelled via a
+        // context that spells it Abbbb), the accidental count explodes.
+        // Compute the delta from the natural generic size and clamp it so a
+        // degree can carry at most a double accidental.
+        label = degreeLabelSafe(i.semitones, i.generic);
       }
       return { semitones: mod12(i.semitones), generic: i.generic, pc, name: this.spelledName(ctx, pc), degree: label };
     }).sort((a, b) => a.semitones - b.semitones);
@@ -236,7 +243,7 @@ export class HarmonicApp {
         pc,
         offset: o,
         name: sp.letter + accidentalText(sp.accidental),
-        label: typeof spelled?.[i] === "string" ? spelled[i] : `${i + 1}${sp.accidental === 1 ? "#" : sp.accidental === -1 ? "b" : sp.accidental > 1 ? "#".repeat(sp.accidental) : sp.accidental < -1 ? "b".repeat(-sp.accidental) : ""}`,
+        label: typeof spelled?.[i] === "string" ? spelled[i] : `${accidentalLabel(clampAccidental(sp.accidental))}${i + 1}`,
       };
     });
     return {
@@ -260,7 +267,7 @@ export class HarmonicApp {
         const semi = mod12(deg.pc - base.pc);
         const naturalOffset = NATURAL_SEMI[Math.min(generic - 1, 6)] ?? 0;
         const alter = mod12(semi - naturalOffset + 6) - 6;
-        const accTxt = alter > 0 ? "#".repeat(alter) : alter < 0 ? "b".repeat(-alter) : "";
+        const accTxt = accidentalLabel(alter);
         return `${accTxt}${generic > 7 ? generic : generic}`;
       });
     return makeChord(base.pc, tokens.length ? tokens : ["3", "5"], undefined);
