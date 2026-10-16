@@ -9,7 +9,7 @@ import { ScaleInstance, scaleBitmask, scaleIntervals } from "../theory/scale.js"
 import { parseChordSymbol, ParseResult } from "../theory/parser.js";
 import { spellSet } from "../theory/speller.js";
 import { accidentalText, Letter, LETTERS } from "../theory/spelling.js";
-import { degreeLabel } from "../theory/intervals.js";
+import { accidentalLabel, degreeLabel } from "../theory/intervals.js";
 import { SymbolRenderer, RenderedChord, NoteNameCtx, ctxForChord } from "../display/symbol.js";
 import { parseSpelling, bestSpelling, spellingPC, Spelling } from "../theory/spelling.js";
 import {
@@ -121,6 +121,8 @@ export class HarmonicApp {
     const degrees = ch.intervals.map((i) => ({ semitones: i.semitones, generic: i.generic }));
     const names = normalizeSet([ch.root, ...degrees.map((d) => mod12(ch.root + d.semitones))]);
     const anchors = new Map<PitchClass, Spelling>([[mod12(ch.root), rootSp]]);
+    // Authored/parsed exact degrees take priority over heuristic respellings.
+    for (const ed of ch.exactDegrees ?? []) anchors.set(mod12(ch.root + ed.spec.semitones), ed.spelling);
     const map = spellSet(names, { anchors, anchorRoot: mod12(ch.root), degrees, preferFlats });
     const rc: RenderedChord = {
       root: ch.root,
@@ -163,15 +165,25 @@ export class HarmonicApp {
     // re-spelled tones (e.g. Fmaj7#9 re-read as Ab/F) use the parent scale's
     // names instead of heuristic respellings like "Abbbb".
     const ctx = ctxOverride ? { ...this.chordContext(ch), spellings: new Map([...ctxOverride.spellings, ...this.chordContext(ch).spellings]) } : this.chordContext(ch);
-    const tones = ch.intervals
-      .map((i) => ({
-        semitones: mod12(i.semitones),
-        generic: i.generic,
-        pc: mod12(ch.root + i.semitones),
-        name: this.spelledName(ctx, mod12(ch.root + i.semitones)),
-        degree: degreeLabel(mod12(i.semitones), i.generic),
-      }))
-      .sort((a, b) => a.semitones - b.semitones);
+    // Authored exact degrees (e.g. "#9" over F) label directly; anything else
+    // falls back to interval arithmetic which is now octave-safe.
+    const exactBySemi = new Map<number, string>();
+    for (const ed of ch.exactDegrees ?? []) {
+      exactBySemi.set(mod12(ed.spec.semitones), accidentalLabel(ed.spelling.accidental) + String(ed.spec.generic + 1));
+    }
+    const tones = ch.intervals.map((i) => {
+      const pc = mod12(ch.root + i.semitones);
+      let label: string;
+      if (exactBySemi.has(mod12(i.semitones))) {
+        label = exactBySemi.get(mod12(i.semitones))!;
+      } else if (ctx.chordTones) {
+        const sp = ctx.chordTones.spellings.get(pc);
+        label = sp ? accidentalLabel(sp.accidental) + String(i.generic + 1) : degreeLabel(i.semitones, i.generic);
+      } else {
+        label = degreeLabel(i.semitones, i.generic);
+      }
+      return { semitones: mod12(i.semitones), generic: i.generic, pc, name: this.spelledName(ctx, pc), degree: label };
+    }).sort((a, b) => a.semitones - b.semitones);
     const formula = formulaForChord(ch);
     // Render expressions in the same merged context so slash/re-root forms
     // use scale-consistent note names (no "F bbbbbbb9"-style artifacts).

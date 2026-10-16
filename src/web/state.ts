@@ -6,7 +6,7 @@
 import { mod12, normalizeSet, PitchClass } from "../core/pitch.js";
 import { Chord, makeChord } from "../theory/chord.js";
 import { ScaleInstance } from "../theory/scale.js";
-import { parseSpelling, Spelling } from "../theory/spelling.js";
+import { accidentalText, bestSpelling, parseSpelling, Spelling } from "../theory/spelling.js";
 import { HarmonicApp, ChordView, ScaleView, TransitionReport } from "../analysis/api.js";
 
 export interface TimelineSlot {
@@ -122,10 +122,23 @@ export class Store {
     if (!others.length) return null;
     const tokens = others.map((p) => pcToDegreeToken(mod12(p - root)));
     try {
-      return makeChord(mod12(root), tokens);
+      // Spelled root name so makeChord can attach exact degree spellings.
+      const rootName = bestSpelling(mod12(root)).letter + accidentalText(bestSpelling(mod12(root)).accidental);
+      return makeChord(mod12(root), tokens, undefined, rootName);
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Build a chord from a parsed symbol or an authored token list, preserving
+   * exact degree spellings (e.g. Fmaj7#9 -> G# labeled "#9", never "bbbb9").
+   */
+  parseChordView(text: string): ChordView | null {
+    const r = this.app.parse(text);
+    if (!r.ok || !r.chord) return null;
+    const ctx = this.activeScale ? this.scaleContext(this.activeScale) : undefined;
+    return this.app.chordView(r.chord, r.chord.bass, ctx);
   }
 
   scaleViewOf(inst: ScaleInstance): ScaleView {
