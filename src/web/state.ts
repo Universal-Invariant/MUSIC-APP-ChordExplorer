@@ -6,6 +6,7 @@
 import { mod12, normalizeSet, PitchClass } from "../core/pitch.js";
 import { Chord, makeChord } from "../theory/chord.js";
 import { ScaleInstance } from "../theory/scale.js";
+import { parseSpelling, Spelling } from "../theory/spelling.js";
 import { HarmonicApp, ChordView, ScaleView, TransitionReport } from "../analysis/api.js";
 
 export interface TimelineSlot {
@@ -43,6 +44,8 @@ export class Store {
   activeScale: ScaleInstance | null = null;
   reverseMotion = 2;
   lastError: string | null = null;
+  /** selected instrument visualizer id (piano | guitar | mandolin | violin | cello | bass) */
+  instrumentId = "piano";
 
   private nextId = 1;
   private listeners = new Set<() => void>();
@@ -90,7 +93,26 @@ export class Store {
   selectionChordView(): ChordView | null {
     const ch = this.selectionChord();
     if (!ch) return null;
-    return this.app.chordView(ch, this.selection.bass ?? undefined);
+    // When a scale is active, prefer its spellings for shared pitch classes so
+    // re-rooted/slash views read e.g. "Ab/F" instead of "F bbbbbbb9".
+    const ctx = this.activeScale ? this.scaleContext(this.activeScale) : undefined;
+    return this.app.chordView(ch, this.selection.bass ?? undefined, ctx);
+  }
+
+  /** Note-name context derived from a scale instance (exact scale spelling). */
+  scaleContext(inst: ScaleInstance): import("../display/symbol.js").NoteNameCtx {
+    const view = this.app.scaleView(inst);
+    const spellings = new Map<PitchClass, Spelling>();
+    for (const d of view.degrees) {
+      const sp = parseSpelling(d.name);
+      if (sp) spellings.set(mod12(d.pc), sp);
+    }
+    return { spellings };
+  }
+
+  setInstrument(id: string): void {
+    this.instrumentId = id;
+    this.emit();
   }
 
   selectionChord(): Chord | null {

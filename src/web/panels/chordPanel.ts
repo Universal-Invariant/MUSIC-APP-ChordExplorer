@@ -8,9 +8,8 @@ import { mod12, PitchClass } from "../../core/pitch.js";
 import { ChordView } from "../../analysis/api.js";
 import { Store } from "../state.js";
 import { el, clear, on } from "../dom.js";
-import { keyboardStrip, fretGrid, Highlight } from "./visual.js";
-
-const STANDARD_TUNING: PitchClass[] = [4, 11, 7, 2, 9, 4]; // high e A D G B E → as pcs from high to low
+import { Highlight } from "./visual.js";
+import { getVisualizer, instrumentPicker } from "../instruments.js";
 
 export function mountChordPanel(root: HTMLElement, store: Store): void {
   const render = () => draw(root, store);
@@ -22,7 +21,7 @@ function draw(root: HTMLElement, store: Store): void {
   clear(root);
   root.appendChild(el("h2", {}, "Chord builder"));
 
-  /* ---- interactive keyboard ---- */
+  /* ---- interactive visualizer (piano / guitar / strings) ---- */
   const sel = store.selection;
   const highlights: Highlight[] = [];
   if (store.activeScale) {
@@ -35,15 +34,15 @@ function draw(root: HTMLElement, store: Store): void {
   const view = store.selectionChordView();
   const names = view ? nameMap(view) : undefined;
 
-  const kbd = keyboardStrip(highlights, {
-    names,
-    onClickPc: (pc, ev) => {
-      if (ev.shiftKey) store.setRoot(pc);
-      else if (ev.altKey || ev.metaKey) store.toggleBass(pc);
-      else store.togglePc(pc);
-    },
-  });
-  root.appendChild(kbd);
+  root.appendChild(instrumentPicker(store.instrumentId, (id) => store.setInstrument(id)));
+
+  const clickPc = (pc: PitchClass, ev: MouseEvent) => {
+    if (ev.shiftKey) store.setRoot(pc);
+    else if (ev.altKey || ev.metaKey) store.toggleBass(pc);
+    else store.togglePc(pc);
+  };
+  const viz = getVisualizer(store.instrumentId);
+  root.appendChild(viz.render({ highlights, names, onClickPc: clickPc }));
   root.appendChild(el("div", { class: "hint" }, "click = add/remove tone · shift+click = root · alt/⌘+click = slash bass"));
 
   /* ---- action buttons ---- */
@@ -63,17 +62,6 @@ function draw(root: HTMLElement, store: Store): void {
     root.appendChild(el("div", { class: "muted" }, "Select at least one more tone above the root."));
   }
   if (store.lastError) root.appendChild(el("div", { class: "error" }, store.lastError));
-
-  /* ---- fretboard mirror of the same selection ---- */
-  root.appendChild(el("h3", {}, "Fretboard"));
-  root.appendChild(fretGrid(STANDARD_TUNING, 12, highlights, {
-    names,
-    onClickPc: (pc, ev) => {
-      if (ev.shiftKey) store.setRoot(pc);
-      else if (ev.altKey || ev.metaKey) store.toggleBass(pc);
-      else store.togglePc(pc);
-    },
-  }));
 }
 
 /** Render a static chord card for a given ChordView (used by other panels too). */
@@ -97,7 +85,7 @@ export function chordCard(view: ChordView, store: Store, showExpressions = false
     { pcs: new Set([view.root]), kind: "root" },
   ];
   if (view.bass !== undefined) hl.push({ pcs: new Set([view.bass]), kind: "bass" });
-  card.appendChild(keyboardStrip(hl, { names: nameMap(view) }));
+  card.appendChild(getVisualizer(store.instrumentId).render({ highlights: hl, names: nameMap(view) }));
 
   if (showExpressions && view.expressions.length) {
     const expr = el("div", { class: "expr-list" });

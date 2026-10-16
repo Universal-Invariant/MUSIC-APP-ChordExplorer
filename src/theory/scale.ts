@@ -22,6 +22,8 @@ export interface ScaleDef {
 export interface ScaleInstance {
   def: ScaleDef;
   root: PitchClass;
+  /** spelled tonic as entered (e.g. "F#"); used for exact degree spelling */
+  rootName?: string;
 }
 
 /** Absolute intervals from root for each degree. */

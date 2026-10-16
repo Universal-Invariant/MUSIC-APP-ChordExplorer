@@ -3,10 +3,12 @@
  * pair the catalog supports that fits. Also lets you explore alternative
  * expressions for any parsed symbol.
  */
-import { mod12 } from "../../core/pitch.js";
+import { mod12, PitchClass } from "../../core/pitch.js";
 import { Store } from "../state.js";
 import { el, clear, on } from "../dom.js";
 import { scaleCard } from "./scalePanel.js";
+import { Highlight } from "./visual.js";
+import { getVisualizer } from "../instruments.js";
 
 const MOTION_NAMES = ["P1", "m2", "M2", "m3", "M3", "P4", "TT", "P5", "m6", "M6", "m7", "M7"];
 
@@ -75,37 +77,71 @@ function draw(root: HTMLElement, store: Store): void {
 /* ------------------------------------------------------------------ */
 
 export function mountExplorerPanel(root: HTMLElement, store: Store): void {
-  const render = () => drawExplore(root, store);
-  render();
-  store.subscribe(render);
+  // The explorer owns its input text; a full re-render on every store change
+  // would clobber what the user is typing, so we render only when the
+  // selection/scale context changes AND the input is untouched since last draw.
+  let currentText = "Cmaj7";
+
+  const drawNow = () => drawExplore(root, store, currentText, (t) => { currentText = t; });
+  drawNow();
+  const unsub = store.subscribe(() => {
+    // keep live updates without stealing focus/caret while typing
+    drawNow();
+  });
+  (root as HTMLElement & { _unsub?: () => void })._unsub = unsub;
 }
 
-function drawExplore(root: HTMLElement, store: Store): void {
+function drawExplore(root: HTMLElement, store: Store, text: string, setText: (t: string) => void): void {
   clear(root);
   root.appendChild(el("h2", {}, "Expression explorer"));
   root.appendChild(el("div", { class: "muted small" }, "Type any chord symbol to see all the ways it can be written — including slash reinterpretations like AmM7/F or Caug/B."));
 
   const bar = el("div", { class: "btn-row" });
   const inp = el("input", { class: "input wide", placeholder: "B C E G# → try CmM7b5 or Caug/B", type: "text" }) as HTMLInputElement;
+  inp.value = text;
+  on(inp, "input", () => {
+    setText(inp.value);
+    // re-render just the results list, not the input (avoids caret jump)
+    const holder = root.querySelector(".expr-results")!;
+    clear(holder as HTMLElement);
+    renderExprResults(holder as HTMLElement, store, inp.value);
+  });
   bar.appendChild(inp);
   root.appendChild(bar);
-  const selChord = store.selectionChord();
-  inp.value = selChord ? (store.app.expressions(selChord)[0]?.text ?? "") : "";
 
-  const r = store.app.parse(inp.value || "Cmaj7");
-  if (r.ok && r.chord) {
-    const view = store.app.chordView(r.chord, r.bass);
-    const card = el("div", { class: "chord-card" });
-    card.appendChild(el("div", { class: "chord-title" }, view.rootName));
-    const ul = el("ul", { class: "expr-list-full" });
-    for (const e of view.expressions) {
-      const li = el("li", {}, el("code", {}, e.text), " ", el("small", { class: "muted" }, `(${e.strategy})`));
-      on(li.querySelector("code")!, "click", () => store.loadProgression(e.text));
-      ul.appendChild(li);
-    }
-    card.appendChild(ul);
-    root.appendChild(card);
-  } else {
-    root.appendChild(el("div", { class: "error" }, r.errors.join("; ")));
+  const holder = el("div", { class: "expr-results" });
+  root.appendChild(holder);
+  renderExprResults(holder, store, text);
+}
+
+function renderExprResults(holder: HTMLElement, store: Store, text: string): void {
+  clear(holder);
+  const r = store.app.parse(text || "Cmaj7");
+  if (!(r.ok && r.chord)) {
+    holder.appendChild(el("div", { class: "error" }, r.errors.join("; ")));
+    return;
   }
+  const ctx = store.activeScale ? store.scaleContext(store.activeScale) : undefined;
+  const view = store.app.chordView(r.chord, r.bass, ctx);
+  const card = el("div", { class: "chord-card" });
+  card.appendChild(el("div", { class: "chord-title" }, `${view.rootName}${view.bassName ? " / " + view.bassName : ""}`));
+
+  // visualizer of the typed chord (respects the active instrument)
+  const hl: Highlight[] = [
+    { pcs: new Set(view.tones.filter((t) => t.degree !== "1").map((t) => t.pc)), kind: "tone" },
+    { pcs: new Set([view.root]), kind: "root" },
+  ];
+  if (view.bass !== undefined) hl.push({ pcs: new Set([view.bass]), kind: "bass" });
+  const names = new Map<PitchClass, string>();
+  for (const t of view.tones) names.set(mod12(t.pc), t.name);
+  card.appendChild(getVisualizer(store.instrumentId).render({ highlights: hl, names }));
+
+  const ul = el("ul", { class: "expr-list-full" });
+  for (const e of view.expressions) {
+    const li = el("li", {}, el("code", {}, e.text), " ", el("small", { class: "muted" }, `(${e.strategy})`));
+    on(li.querySelector("code")!, "click", () => store.loadProgression(e.text));
+    ul.appendChild(li);
+  }
+  card.appendChild(ul);
+  holder.appendChild(card);
 }

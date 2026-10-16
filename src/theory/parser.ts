@@ -94,13 +94,14 @@ export function parseChordSymbol(text: string, formulaEntries: FormulaEntry[]): 
     if (tokens.length === 0 && s.length > 0) errors.push(`ignored trailing text "${leftover}"`);
   }
 
-  const chord = makeChord(root, degreeTokens, input);
+  const chord = makeChord(root, degreeTokens, input, rootMatch[1] + (rootMatch[2] ?? ""));
   let bass: PitchClass | undefined;
   if (bassText !== undefined) {
     const bs = parseSpelling(bassText);
     if (!bs) errors.push(`bad bass note "${bassText}"`);
     else bass = spellingPC(bs);
   }
+  if (bass !== undefined) chord.bass = bass;
 
   return { ok: errors.length === 0, chord, bass, formula: matched, errors };
 }
